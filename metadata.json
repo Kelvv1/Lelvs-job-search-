@@ -1,0 +1,6 @@
+{
+  "name": "Meridian Jobs",
+  "description": "Centralised job discovery and automated vacancy aggregation platform bringing verified opportunities from multiple external sources into one searchable place.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

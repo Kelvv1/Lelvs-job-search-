@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kelvs job search – Centralised Job Search & Vacancy Discovery</title>
+    <meta
+      name="description"
+      content="Discover verified job vacancies across technology, design, engineering, finance, and remote roles in one place on Kelvs job search."
+    />
+    <meta property="og:title" content="Kelvs job search – Centralised Job Search & Vacancy Discovery" />
+    <meta
+      property="og:description"
+      content="Discover verified job vacancies across technology, design, engineering, finance, and remote roles in one place on Kelvs job search."
+    />
+    <meta property="og:site_name" content="Kelvs job search" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Kelvs job search – Centralised Job Search & Vacancy Discovery" />
+    <meta
+      name="twitter:description"
+      content="Discover verified job vacancies across technology, design, engineering, finance, and remote roles in one place on Kelvs job search."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400..700;1,9..40,400..700&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "Kelvs job search",
+        "description": "Centralised job discovery and vacancy platform bringing verified opportunities from multiple sources into one searchable place.",
+        "potentialAction": {
+          "@type": "SearchAction",
+          "target": "/?q={search_term_string}",
+          "query-input": "required name=search_term_string"
+        }
+      }
+    </script>
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('kelvs_theme');
+          var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var isDark = saved ? saved === 'dark' : prefersDark;
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 antialiased selection:bg-blue-100 selection:text-blue-900 dark:selection:bg-blue-900/50 dark:selection:text-blue-100 transition-colors duration-200">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
