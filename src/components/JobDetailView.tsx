@@ -16,6 +16,7 @@ import { JobCard } from './JobCard.tsx';
 
 interface JobDetailViewProps {
   jobId: number;
+  initialJob?: JobListing | null;
   onBack: () => void;
   onSelectJob: (job: JobListing) => void;
   onToggleSave: (job: JobListing) => void;
@@ -23,34 +24,40 @@ interface JobDetailViewProps {
 
 export function JobDetailView({
   jobId,
+  initialJob = null,
   onBack,
   onSelectJob,
   onToggleSave,
 }: JobDetailViewProps) {
   const { authFetch } = useAuth();
-  const [job, setJob] = useState<JobListing | null>(null);
+  const [job, setJob] = useState<JobListing | null>(initialJob);
   const [relatedJobs, setRelatedJobs] = useState<JobListing[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialJob);
   const [error, setError] = useState<string | null>(null);
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [logoError, setLogoError] = useState(false);
 
   useEffect(() => {
     let active = true;
+    setJob(initialJob);
+    setLoading(!initialJob);
+    setError(null);
+    setLogoError(false);
+
     async function loadDetail() {
-      setLoading(true);
-      setError(null);
-      setLogoError(false);
       try {
         const res = await authFetch(`/api/jobs/${jobId}`);
-        if (!res.ok) throw new Error('Unable to load job details.');
+        if (!res.ok) {
+          if (!initialJob && active) throw new Error('Unable to load job details.');
+          return;
+        }
         const data = (await res.json()) as { job: JobListing; relatedJobs: JobListing[] };
         if (active) {
           setJob(data.job);
           setRelatedJobs(data.relatedJobs || []);
         }
       } catch (err: unknown) {
-        if (active) {
+        if (active && !initialJob) {
           setError(err instanceof Error ? err.message : 'Unable to load listing.');
         }
       } finally {
@@ -61,7 +68,7 @@ export function JobDetailView({
     return () => {
       active = false;
     };
-  }, [jobId, authFetch]);
+  }, [jobId, initialJob, authFetch]);
 
   const handleCopyEmail = async (email: string) => {
     try {

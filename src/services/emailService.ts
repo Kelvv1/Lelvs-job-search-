@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer';
 import { eq } from 'drizzle-orm';
-import { db } from '../db/index.ts';
+import { db, isDatabaseReady } from '../db/index.ts';
 import { notificationLogs, platformSettings } from '../db/schema.ts';
 
 export interface EmailPayload {
@@ -25,20 +25,33 @@ function isRealSecret(value?: string | null): value is string {
   );
 }
 
+async function safeLogNotification(values: typeof notificationLogs.$inferInsert) {
+  try {
+    if (await isDatabaseReady()) {
+      await db.insert(notificationLogs).values(values);
+    }
+  } catch {
+    // Non-fatal in stateless mode
+  }
+}
+
 export async function dispatchEmail(payload: EmailPayload): Promise<{
   status: 'sent' | 'queued_unconfigured' | 'failed';
   errorMessage?: string;
 }> {
   try {
-    const settingsRows = await db
-      .select()
-      .from(platformSettings)
-      .where(eq(platformSettings.key, 'default'))
-      .limit(1);
+    let settings: typeof platformSettings.$inferSelect | undefined;
+    if (await isDatabaseReady()) {
+      const settingsRows = await db
+        .select()
+        .from(platformSettings)
+        .where(eq(platformSettings.key, 'default'))
+        .limit(1);
+      settings = settingsRows[0];
+    }
 
-    const settings = settingsRows[0];
     if (settings && !settings.emailNotificationsEnabled) {
-      await db.insert(notificationLogs).values({
+      await safeLogNotification({
         recipientEmail: payload.to,
         subject: payload.subject,
         type: payload.type,
@@ -97,7 +110,7 @@ export async function dispatchEmail(payload: EmailPayload): Promise<{
 
       if (!response.ok) {
         const errBody = await response.text();
-        await db.insert(notificationLogs).values({
+        await safeLogNotification({
           recipientEmail: payload.to,
           subject: payload.subject,
           type: payload.type,
@@ -108,7 +121,7 @@ export async function dispatchEmail(payload: EmailPayload): Promise<{
         return { status: 'failed', errorMessage: `Resend error ${response.status}` };
       }
 
-      await db.insert(notificationLogs).values({
+      await safeLogNotification({
         recipientEmail: payload.to,
         subject: payload.subject,
         type: payload.type,
@@ -137,7 +150,7 @@ export async function dispatchEmail(payload: EmailPayload): Promise<{
         html: payload.html,
       });
 
-      await db.insert(notificationLogs).values({
+      await safeLogNotification({
         recipientEmail: payload.to,
         subject: payload.subject,
         type: payload.type,
@@ -147,7 +160,7 @@ export async function dispatchEmail(payload: EmailPayload): Promise<{
       return { status: 'sent' };
     }
 
-    await db.insert(notificationLogs).values({
+    await safeLogNotification({
       recipientEmail: payload.to,
       subject: payload.subject,
       type: payload.type,

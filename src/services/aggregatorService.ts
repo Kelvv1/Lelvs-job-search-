@@ -14,7 +14,7 @@ import {
 import { sendJobAlertEmail } from './emailService.ts';
 import { expandSearchTerms } from './searchService.ts';
 
-interface NormalizedExternalJob {
+export interface NormalizedExternalJob {
   externalId: string;
   title: string;
   companyName: string;
@@ -253,7 +253,7 @@ export function computeDedupHash(title: string, companyName: string): string {
   return crypto.createHash('sha256').update(`${normTitle}::${normCompany}`).digest('hex').slice(0, 24);
 }
 
-async function classifyCategory(
+export async function classifyCategory(
   title: string,
   description: string,
   rawCategory: string | undefined,
@@ -280,7 +280,7 @@ async function classifyCategory(
   return bestCat;
 }
 
-async function fetchRemotiveJobs(
+export async function fetchRemotiveJobs(
   endpointUrl: string,
   limit = 60,
   timeoutMs = 10000
@@ -326,7 +326,7 @@ async function fetchRemotiveJobs(
   });
 }
 
-async function fetchArbeitnowJobs(endpointUrl: string): Promise<NormalizedExternalJob[]> {
+export async function fetchArbeitnowJobs(endpointUrl: string): Promise<NormalizedExternalJob[]> {
   const res = await fetch(endpointUrl, {
     headers: { 'User-Agent': USER_AGENT },
     signal: AbortSignal.timeout(12000),
@@ -368,7 +368,7 @@ async function fetchArbeitnowJobs(endpointUrl: string): Promise<NormalizedExtern
   });
 }
 
-async function fetchJobicyJobs(
+export async function fetchJobicyJobs(
   endpointUrl: string,
   limit = 45,
   timeoutMs = 10000
@@ -432,7 +432,7 @@ async function fetchJobicyJobs(
   });
 }
 
-async function fetchRemoteOkJobs(
+export async function fetchRemoteOkJobs(
   endpointUrl: string,
   limit = 60,
   timeoutMs = 10000
@@ -492,7 +492,7 @@ async function fetchRemoteOkJobs(
   });
 }
 
-async function fetchHimalayasJobs(
+export async function fetchHimalayasJobs(
   endpointUrl: string,
   limit = 50,
   timeoutMs = 10000

@@ -9,7 +9,7 @@ import {
 } from './schema.ts';
 import { computeDedupHash } from '../services/aggregatorService.ts';
 
-const DEFAULT_CATEGORIES = [
+export const DEFAULT_CATEGORIES = [
   {
     slug: 'technology-and-it',
     name: 'Technology and IT',
@@ -256,15 +256,12 @@ async function runBootstrap(): Promise<void> {
   }
 }
 
-export async function seedSampleJobs(): Promise<number> {
-  const allCats = await db.select().from(categories);
-  const catBySlug = new Map(allCats.map((c) => [c.slug, c]));
+export function getSampleListingsTemplate() {
+  const now = Date.now();
+  const daysAgo = (d: number) => new Date(now - d * 24 * 60 * 60 * 1000);
+  const daysAhead = (d: number) => new Date(now + d * 24 * 60 * 60 * 1000);
 
-    const now = Date.now();
-    const daysAgo = (d: number) => new Date(now - d * 24 * 60 * 60 * 1000);
-    const daysAhead = (d: number) => new Date(now + d * 24 * 60 * 60 * 1000);
-
-    const sampleListings = [
+  return [
       {
         title: 'Website Developer (React & TypeScript)',
         companyName: 'Northstar Digital Studio',
@@ -553,6 +550,12 @@ export async function seedSampleJobs(): Promise<number> {
         status: 'verified',
       },
     ];
+}
+
+export async function seedSampleJobs(): Promise<number> {
+  const allCats = await db.select().from(categories);
+  const catBySlug = new Map(allCats.map((c) => [c.slug, c]));
+  const sampleListings = getSampleListingsTemplate();
 
   let insertedCount = 0;
     for (let i = 0; i < sampleListings.length; i++) {

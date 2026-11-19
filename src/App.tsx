@@ -29,6 +29,7 @@ function AppShell() {
   const { firebaseUser, authFetch, signInWithGoogle } = useAuth();
   const [currentView, setCurrentView] = useState<AppView>('home');
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
+  const [selectedJob, setSelectedJob] = useState<JobListing | null>(null);
   const [previousView, setPreviousView] = useState<AppView>('jobs');
   const [filters, setFilters] = useState<SearchFiltersState>(DEFAULT_FILTERS);
 
@@ -134,6 +135,7 @@ function AppShell() {
   const handleSelectJob = (job: JobListing) => {
     setPreviousView(currentView === 'job-detail' ? 'jobs' : currentView);
     setSelectedJobId(job.id);
+    setSelectedJob(job);
     setCurrentView('job-detail');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -206,6 +208,7 @@ function AppShell() {
       {currentView === 'job-detail' && selectedJobId !== null && (
         <JobDetailView
           jobId={selectedJobId}
+          initialJob={selectedJob?.id === selectedJobId ? selectedJob : null}
           onBack={() => setCurrentView(previousView)}
           onSelectJob={handleSelectJob}
           onToggleSave={handleToggleSave}

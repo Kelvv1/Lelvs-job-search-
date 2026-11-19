@@ -3,7 +3,7 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { and, count, desc, eq, gte, inArray, ne, sql } from 'drizzle-orm';
-import { db } from './src/db/index.ts';
+import { db, isDatabaseReady } from './src/db/index.ts';
 import {
   categories,
   companies,
@@ -27,6 +27,13 @@ import {
   triggerStartupLiveWarmup,
 } from './src/services/aggregatorService.ts';
 import { dispatchEmail } from './src/services/emailService.ts';
+import {
+  addFallbackReview,
+  getFallbackCategories,
+  getFallbackJobById,
+  getFallbackReviewsSnapshot,
+  searchFallbackJobs,
+} from './src/services/fallbackCatalog.ts';
 import { expandSearchTerms, scoreJobRelevance } from './src/services/searchService.ts';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -35,19 +42,26 @@ const __dirname = path.dirname(__filename);
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 
-// Ensure bootstrap data before handling API routes (lazy on first request, never blocking startup)
+// Ensure bootstrap data before handling API routes when PostgreSQL is reachable
 app.use('/api', async (_req, _res, next) => {
   try {
-    await ensureBootstrapData();
+    if (await isDatabaseReady()) {
+      await ensureBootstrapData();
+    }
     next();
   } catch (error) {
-    console.error('Bootstrap initialization error:', error);
-    next(error);
+    console.warn('Bootstrap skipped, falling back to live catalog:', (error as Error)?.message);
+    next();
   }
 });
 
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, timestamp: new Date().toISOString() });
+app.get('/api/health', async (_req, res) => {
+  const dbReady = await isDatabaseReady();
+  res.json({
+    ok: true,
+    database: dbReady ? 'connected' : 'live_fallback',
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -56,6 +70,9 @@ app.get('/api/health', (_req, res) => {
 
 app.get('/api/categories', async (_req, res) => {
   try {
+    if (!(await isDatabaseReady())) {
+      return res.json(await getFallbackCategories());
+    }
     const settingsRows = await db
       .select({ demoModeEnabled: platformSettings.demoModeEnabled })
       .from(platformSettings)
@@ -85,32 +102,54 @@ app.get('/api/categories', async (_req, res) => {
 
     res.json({ categories: enriched, demoModeEnabled });
   } catch (error) {
-    console.error('Failed to fetch categories:', error);
-    res.status(500).json({ error: 'Unable to load job categories.' });
+    console.warn('Category DB fetch failed, using live fallback:', (error as Error)?.message);
+    try {
+      return res.json(await getFallbackCategories());
+    } catch {
+      res.status(500).json({ error: 'Unable to load job categories.' });
+    }
   }
 });
 
 app.get('/api/jobs', optionalAuth, async (req: AuthRequest, res) => {
+  const q = String(req.query.q || '').trim();
+  const location = String(req.query.location || '').trim().toLowerCase();
+  const categorySlug = String(req.query.category || '').trim();
+  const workArrangement = String(req.query.workArrangement || '').trim();
+  const employmentType = String(req.query.employmentType || '').trim();
+  const experienceLevel = String(req.query.experienceLevel || '').trim();
+  const datePosted = String(req.query.datePosted || '').trim();
+  const salaryMin = Number(req.query.salaryMin || 0);
+  const sort = String(req.query.sort || (q ? 'relevant' : 'recent'));
+  const dataOrigin = String(req.query.origin || 'all'); // 'all' | 'live' | 'sample'
+  const page = Math.max(1, Number(req.query.page || 1));
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit || 60)));
+
   try {
+    if (!(await isDatabaseReady())) {
+      const fallbackResult = await searchFallbackJobs({
+        q,
+        location,
+        category: categorySlug,
+        workArrangement,
+        employmentType,
+        experienceLevel,
+        datePosted,
+        salaryMin,
+        sort,
+        origin: dataOrigin,
+        page,
+        limit,
+      });
+      return res.json(fallbackResult);
+    }
+
     const settingsRows = await db
       .select({ demoModeEnabled: platformSettings.demoModeEnabled })
       .from(platformSettings)
       .where(eq(platformSettings.key, 'default'))
       .limit(1);
     const demoModeEnabled = settingsRows[0]?.demoModeEnabled ?? true;
-
-    const q = String(req.query.q || '').trim();
-    const location = String(req.query.location || '').trim().toLowerCase();
-    const categorySlug = String(req.query.category || '').trim();
-    const workArrangement = String(req.query.workArrangement || '').trim();
-    const employmentType = String(req.query.employmentType || '').trim();
-    const experienceLevel = String(req.query.experienceLevel || '').trim();
-    const datePosted = String(req.query.datePosted || '').trim();
-    const salaryMin = Number(req.query.salaryMin || 0);
-    const sort = String(req.query.sort || (q ? 'relevant' : 'recent'));
-    const dataOrigin = String(req.query.origin || 'all'); // 'all' | 'live' | 'sample'
-    const page = Math.max(1, Number(req.query.page || 1));
-    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 60)));
 
     if (q) {
       await federateLiveSearch(q);
@@ -243,14 +282,38 @@ app.get('/api/jobs', optionalAuth, async (req: AuthRequest, res) => {
       expandedTerms: q ? expandedTerms.slice(0, 8) : [],
     });
   } catch (error) {
-    console.error('Job search failed:', error);
-    res.status(500).json({ error: 'Unable to execute job search.' });
+    console.warn('Job search DB query failed, using live fallback:', (error as Error)?.message);
+    try {
+      const fallbackResult = await searchFallbackJobs({
+        q,
+        location,
+        category: categorySlug,
+        workArrangement,
+        employmentType,
+        experienceLevel,
+        datePosted,
+        salaryMin,
+        sort,
+        origin: dataOrigin,
+        page,
+        limit,
+      });
+      return res.json(fallbackResult);
+    } catch {
+      res.status(500).json({ error: 'Unable to execute job search.' });
+    }
   }
 });
 
 app.get('/api/jobs/:id', optionalAuth, async (req: AuthRequest, res) => {
+  const idParam = String(req.params.id);
   try {
-    const idParam = String(req.params.id);
+    if (!(await isDatabaseReady())) {
+      const fallbackDetail = await getFallbackJobById(idParam);
+      if (!fallbackDetail) return res.status(404).json({ error: 'Job listing not found.' });
+      return res.json(fallbackDetail);
+    }
+
     const numericId = Number(idParam);
     const rows = Number.isInteger(numericId) && numericId > 0
       ? await db.select().from(jobs).where(eq(jobs.id, numericId)).limit(1)
@@ -258,6 +321,8 @@ app.get('/api/jobs/:id', optionalAuth, async (req: AuthRequest, res) => {
 
     const job = rows[0];
     if (!job) {
+      const fallbackDetail = await getFallbackJobById(idParam);
+      if (fallbackDetail) return res.json(fallbackDetail);
       return res.status(404).json({ error: 'Job listing not found.' });
     }
 
@@ -319,20 +384,31 @@ app.post('/api/alerts/public', optionalAuth, async (req: AuthRequest, res) => {
       return res.status(400).json({ error: 'Please enter a valid email address.' });
     }
 
-    const inserted = await db
-      .insert(jobAlerts)
-      .values({
-        userId: req.dbUser?.id ?? null,
-        email,
-        keywords: keywords || 'All roles',
-        categorySlug,
-        location,
-        workArrangement,
-        experienceLevel,
-        frequency,
-        isActive: true,
-      })
-      .returning();
+    let insertedAlert: unknown = {
+      id: Date.now(),
+      email,
+      keywords: keywords || 'All roles',
+      workArrangement,
+      frequency,
+    };
+
+    if (await isDatabaseReady()) {
+      const inserted = await db
+        .insert(jobAlerts)
+        .values({
+          userId: req.dbUser?.id ?? null,
+          email,
+          keywords: keywords || 'All roles',
+          categorySlug,
+          location,
+          workArrangement,
+          experienceLevel,
+          frequency,
+          isActive: true,
+        })
+        .returning();
+      insertedAlert = inserted[0];
+    }
 
     const mailResult = await dispatchEmail({
       to: email,
@@ -351,7 +427,7 @@ app.post('/api/alerts/public', optionalAuth, async (req: AuthRequest, res) => {
     });
 
     res.status(201).json({
-      alert: inserted[0],
+      alert: insertedAlert,
       emailDeliveryStatus: mailResult.status,
       message:
         mailResult.status === 'sent'
@@ -370,6 +446,10 @@ app.post('/api/alerts/public', optionalAuth, async (req: AuthRequest, res) => {
 
 app.get('/api/reviews', async (_req, res) => {
   try {
+    if (!(await isDatabaseReady())) {
+      return res.json(getFallbackReviewsSnapshot());
+    }
+
     const [rows, settingsRows] = await Promise.all([
       db
         .select({
@@ -403,8 +483,8 @@ app.get('/api/reviews', async (_req, res) => {
         settingsRows[0]?.reviewRecipientEmail || 'ebaluegbefodestiny@gmail.com',
     });
   } catch (error) {
-    console.error('Failed to load site reviews:', error);
-    res.status(500).json({ error: 'Unable to load reviews.' });
+    console.warn('Reviews DB fetch failed, using fallback:', (error as Error)?.message);
+    res.json(getFallbackReviewsSnapshot());
   }
 });
 
@@ -423,26 +503,32 @@ app.post('/api/reviews', async (req, res) => {
       });
     }
 
-    const settingsRows = await db
-      .select({ reviewRecipientEmail: platformSettings.reviewRecipientEmail })
-      .from(platformSettings)
-      .where(eq(platformSettings.key, 'default'))
-      .limit(1);
+    const dbReady = await isDatabaseReady();
+    let recipientEmail = 'ebaluegbefodestiny@gmail.com';
+    let insertedId: number | null = null;
 
-    const recipientEmail =
-      settingsRows[0]?.reviewRecipientEmail || 'ebaluegbefodestiny@gmail.com';
+    if (dbReady) {
+      const settingsRows = await db
+        .select({ reviewRecipientEmail: platformSettings.reviewRecipientEmail })
+        .from(platformSettings)
+        .where(eq(platformSettings.key, 'default'))
+        .limit(1);
 
-    const inserted = await db
-      .insert(siteReviews)
-      .values({
-        reviewerName,
-        reviewerEmail,
-        rating,
-        comment,
-        deliveredToEmail: recipientEmail,
-        emailStatus: 'queued_unconfigured',
-      })
-      .returning();
+      recipientEmail = settingsRows[0]?.reviewRecipientEmail || recipientEmail;
+
+      const inserted = await db
+        .insert(siteReviews)
+        .values({
+          reviewerName,
+          reviewerEmail,
+          rating,
+          comment,
+          deliveredToEmail: recipientEmail,
+          emailStatus: 'queued_unconfigured',
+        })
+        .returning();
+      insertedId = inserted[0]?.id ?? null;
+    }
 
     const starText = '★'.repeat(rating) + '☆'.repeat(5 - rating);
     const mailResult = await dispatchEmail({
@@ -462,18 +548,30 @@ app.post('/api/reviews', async (req, res) => {
       matchedJobsCount: 0,
     });
 
-    const updated = await db
-      .update(siteReviews)
-      .set({ emailStatus: mailResult.status })
-      .where(eq(siteReviews.id, inserted[0].id))
-      .returning({
-        id: siteReviews.id,
-        reviewerName: siteReviews.reviewerName,
-        rating: siteReviews.rating,
-        comment: siteReviews.comment,
-        createdAt: siteReviews.createdAt,
-        emailStatus: siteReviews.emailStatus,
+    let finalReview: unknown;
+    if (dbReady && insertedId !== null) {
+      const updated = await db
+        .update(siteReviews)
+        .set({ emailStatus: mailResult.status })
+        .where(eq(siteReviews.id, insertedId))
+        .returning({
+          id: siteReviews.id,
+          reviewerName: siteReviews.reviewerName,
+          rating: siteReviews.rating,
+          comment: siteReviews.comment,
+          createdAt: siteReviews.createdAt,
+          emailStatus: siteReviews.emailStatus,
+        });
+      finalReview = updated[0];
+    } else {
+      finalReview = addFallbackReview({
+        reviewerName,
+        reviewerEmail,
+        rating,
+        comment,
+        emailStatus: mailResult.status,
       });
+    }
 
     const mailSubject = encodeURIComponent(
       `Website Review for Kelvs job search (${rating}/5) — ${reviewerName}`
@@ -484,7 +582,7 @@ app.post('/api/reviews', async (req, res) => {
     const mailtoFallbackUrl = `mailto:${recipientEmail}?subject=${mailSubject}&body=${mailBody}`;
 
     res.status(201).json({
-      review: updated[0],
+      review: finalReview,
       emailStatus: mailResult.status,
       recipientEmail,
       mailtoFallbackUrl,
@@ -1294,29 +1392,36 @@ app.patch('/api/admin/users/:id/role', requireAuth, requireAdmin, async (req, re
 const SCHEDULER_CHECK_MS = 5 * 60 * 1000;
 let isScheduledSyncRunning = false;
 
-setInterval(async () => {
-  if (isScheduledSyncRunning) return;
-  try {
-    const settingsRows = await db
-      .select()
-      .from(platformSettings)
-      .where(eq(platformSettings.key, 'default'))
-      .limit(1);
-    const settings = settingsRows[0];
-    if (!settings || !settings.autoSyncEnabled) return;
+const isServerlessRuntime = Boolean(
+  process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME
+);
 
-    const intervalMs = settings.syncIntervalHours * 60 * 60 * 1000;
-    const lastRun = settings.lastScheduledRunAt ? settings.lastScheduledRunAt.getTime() : 0;
-    if (Date.now() - lastRun >= intervalMs) {
-      isScheduledSyncRunning = true;
-      await syncJobSources({ triggerType: 'scheduled' });
+if (!isServerlessRuntime) {
+  setInterval(async () => {
+    if (isScheduledSyncRunning) return;
+    try {
+      if (!(await isDatabaseReady())) return;
+      const settingsRows = await db
+        .select()
+        .from(platformSettings)
+        .where(eq(platformSettings.key, 'default'))
+        .limit(1);
+      const settings = settingsRows[0];
+      if (!settings || !settings.autoSyncEnabled) return;
+
+      const intervalMs = settings.syncIntervalHours * 60 * 60 * 1000;
+      const lastRun = settings.lastScheduledRunAt ? settings.lastScheduledRunAt.getTime() : 0;
+      if (Date.now() - lastRun >= intervalMs) {
+        isScheduledSyncRunning = true;
+        await syncJobSources({ triggerType: 'scheduled' });
+      }
+    } catch (err) {
+      console.error('Scheduled collection check failed:', err);
+    } finally {
+      isScheduledSyncRunning = false;
     }
-  } catch (err) {
-    console.error('Scheduled collection check failed:', err);
-  } finally {
-    isScheduledSyncRunning = false;
-  }
-}, SCHEDULER_CHECK_MS);
+  }, SCHEDULER_CHECK_MS);
+}
 
 // ---------------------------------------------------------------------------
 // Frontend Serving (Vite Dev Middleware or Production Static Dist)
@@ -1345,4 +1450,8 @@ async function startServer() {
   });
 }
 
-startServer();
+if (!isServerlessRuntime) {
+  startServer();
+}
+
+export default app;

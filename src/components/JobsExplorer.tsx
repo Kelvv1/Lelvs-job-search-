@@ -82,7 +82,10 @@ export function JobsExplorer({
         params.set('limit', '60');
 
         const res = await authFetch(`/api/jobs?${params.toString()}`);
-        if (!res.ok) throw new Error('Unable to load job results.');
+        const contentType = res.headers.get('content-type') || '';
+        if (!res.ok || !contentType.includes('application/json')) {
+          throw new Error('Unable to load job results.');
+        }
         const data = (await res.json()) as {
           jobs: JobListing[];
           total: number;
