@@ -57,6 +57,7 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
   const [credentialsStatus, setCredentialsStatus] = useState({
     hasResendKey: false,
     hasSmtpCredentials: false,
+    hasSmtpPass: false,
     hasAdzunaCredentials: false,
   });
   const [registeredUsers, setRegisteredUsers] = useState<
@@ -82,6 +83,7 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
     employmentType: 'Full-time',
     experienceLevel: 'Mid-level',
     salaryText: '',
+    deadlineAt: '',
     applicationEmail: '',
     applicationUrl: '',
     applicationInstructions: '',
@@ -258,6 +260,7 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
       employmentType: 'Full-time',
       experienceLevel: 'Mid-level',
       salaryText: '',
+      deadlineAt: '',
       applicationEmail: '',
       applicationUrl: '',
       applicationInstructions: '',
@@ -281,6 +284,7 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
       employmentType: job.employmentType,
       experienceLevel: job.experienceLevel || 'Mid-level',
       salaryText: job.salaryText || '',
+      deadlineAt: job.deadlineAt ? new Date(job.deadlineAt).toISOString().slice(0, 10) : '',
       applicationEmail: job.applicationEmail || '',
       applicationUrl: job.applicationUrl || '',
       applicationInstructions: job.applicationInstructions || '',
@@ -308,6 +312,7 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
           employmentType: jobForm.employmentType,
           experienceLevel: jobForm.experienceLevel,
           salaryText: jobForm.salaryText || null,
+          deadlineAt: jobForm.deadlineAt || null,
           applicationEmail: jobForm.applicationEmail || null,
           applicationUrl: jobForm.applicationUrl || null,
           applicationInstructions: jobForm.applicationInstructions || null,
@@ -449,6 +454,12 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
       });
       loadSettings();
       onDataChanged();
+    } else {
+      const err = (await res.json().catch(() => ({}))) as { error?: string };
+      setBanner({
+        type: 'error',
+        text: err.error || 'Unable to save platform settings.',
+      });
     }
   };
 
@@ -567,7 +578,7 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
         {[
           { id: 'overview', label: 'Overview', icon: LayoutDashboard },
           { id: 'jobs', label: 'Job Management', icon: Briefcase },
-          { id: 'integrations', label: 'Integrations', icon: Plug },
+          { id: 'integrations', label: 'Integrations Settings', icon: Plug },
           { id: 'automation', label: 'Demo Mode & Automation', icon: Settings },
           { id: 'reviews', label: 'Website Reviews', icon: Mail },
           { id: 'users', label: 'Users', icon: Users },
@@ -614,6 +625,29 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
                 </p>
               </div>
             ))}
+          </div>
+
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <p className="font-display text-sm font-bold text-slate-900 dark:text-slate-50">
+                Optional Integrations Readiness
+              </p>
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                Adzuna: <span className="font-semibold">{credentialsStatus.hasAdzunaCredentials ? 'Connected' : 'Not connected'}</span>
+                {' · '}
+                Resend: <span className="font-semibold">{credentialsStatus.hasResendKey ? 'Connected' : 'Not connected'}</span>
+                {' · '}
+                SMTP: <span className="font-semibold">{credentialsStatus.hasSmtpCredentials ? 'Connected' : 'Not connected'}</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTab('integrations')}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <Plug className="h-3.5 w-3.5" />
+              Open Integrations Settings
+            </button>
           </div>
 
           <div className="grid gap-8 lg:grid-cols-12">
@@ -882,7 +916,7 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
             </div>
           </div>
 
-          {/* Primary Optional Integrations Grid: Adzuna, Resend, SMTP */}
+          {/* Primary Optional Integrations Grid: Adzuna, Resend API, Resend SMTP */}
           <div className="grid gap-6 lg:grid-cols-3">
             {/* Adzuna Integration Card */}
             <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 flex flex-col justify-between space-y-4">
@@ -903,12 +937,27 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
                 </div>
 
                 {!credentialsStatus.hasAdzunaCredentials ? (
-                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                    Adzuna integration is not connected. Add{' '}
-                    <code className="font-mono text-slate-800 dark:text-slate-200">ADZUNA_APP_ID</code> and{' '}
-                    <code className="font-mono text-slate-800 dark:text-slate-200">ADZUNA_APP_KEY</code> in your server
-                    environment secrets when ready to sync Adzuna listings.
-                  </p>
+                  <div className="space-y-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                    <p>
+                      Adzuna integration is optional and currently not connected. Missing
+                      credentials will not affect public search or scheduled syncs.
+                    </p>
+                    <p className="text-slate-500 dark:text-slate-400">
+                      <span className="font-semibold text-slate-700 dark:text-slate-200">How to obtain:</span>{' '}
+                      Register an application at{' '}
+                      <a
+                        href="https://developer.adzuna.com/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-blue-700 dark:text-blue-400 hover:underline"
+                      >
+                        developer.adzuna.com
+                      </a>{' '}
+                      to get your <code className="font-mono text-slate-800 dark:text-slate-200">ADZUNA_APP_ID</code> and{' '}
+                      <code className="font-mono text-slate-800 dark:text-slate-200">ADZUNA_APP_KEY</code>, then add them to
+                      server environment secrets.
+                    </p>
+                  </div>
                 ) : (
                   <p className="text-xs text-emerald-700 dark:text-emerald-400 leading-relaxed">
                     Adzuna API credentials are configured in server secrets and ready to sync.
@@ -983,12 +1032,26 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
                 </div>
 
                 {!credentialsStatus.hasResendKey ? (
-                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                    Resend integration is not connected. Alert subscriptions remain saved in
-                    PostgreSQL and email dispatches are safely logged until{' '}
-                    <code className="font-mono text-slate-800 dark:text-slate-200">RESEND_API_KEY</code> is added to
-                    server environment secrets.
-                  </p>
+                  <div className="space-y-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                    <p>
+                      Resend API is optional and currently not connected. Job alerts and website
+                      reviews stay saved in PostgreSQL without errors.
+                    </p>
+                    <p className="text-slate-500 dark:text-slate-400">
+                      <span className="font-semibold text-slate-700 dark:text-slate-200">How to obtain:</span>{' '}
+                      Create an account at{' '}
+                      <a
+                        href="https://resend.com/api-keys"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-blue-700 dark:text-blue-400 hover:underline"
+                      >
+                        resend.com/api-keys
+                      </a>{' '}
+                      to generate your <code className="font-mono text-slate-800 dark:text-slate-200">RESEND_API_KEY</code> and
+                      add it to server environment secrets.
+                    </p>
+                  </div>
                 ) : (
                   <p className="text-xs text-emerald-700 dark:text-emerald-400 leading-relaxed">
                     Resend API key is present in server secrets and ready for job alert delivery.
@@ -1024,12 +1087,12 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
               )}
             </div>
 
-            {/* SMTP Email Integration Card */}
+            {/* Resend SMTP Relay Integration Card */}
             <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 flex flex-col justify-between space-y-4">
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-50">
-                    Custom SMTP Relay
+                    Resend SMTP Relay
                   </h2>
                   <span
                     className={`text-xs font-semibold ${
@@ -1043,15 +1106,23 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
                 </div>
 
                 {!credentialsStatus.hasSmtpCredentials ? (
-                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                    SMTP integration is not connected. When ready, configure{' '}
-                    <code className="font-mono text-slate-800 dark:text-slate-200">SMTP_HOST</code> and{' '}
-                    <code className="font-mono text-slate-800 dark:text-slate-200">SMTP_PASS</code> in server secrets
-                    and enter your host settings below.
-                  </p>
+                  <div className="space-y-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                    <p>
+                      Host settings are pre-configured (<code className="font-mono">smtp.resend.com</code>,
+                      port <code className="font-mono">465</code>, user <code className="font-mono">resend</code>,
+                      from <code className="font-mono">onboarding@resend.dev</code>).
+                    </p>
+                    <p className="text-slate-500 dark:text-slate-400">
+                      <span className="font-semibold text-slate-700 dark:text-slate-200">Missing secret:</span>{' '}
+                      Add your Resend API key as{' '}
+                      <code className="font-mono text-slate-800 dark:text-slate-200">SMTP_PASS</code> (or{' '}
+                      <code className="font-mono text-slate-800 dark:text-slate-200">RESEND_API_KEY</code>) in server
+                      environment secrets to activate SMTP sending.
+                    </p>
+                  </div>
                 ) : (
                   <p className="text-xs text-emerald-700 dark:text-emerald-400 leading-relaxed">
-                    SMTP host and password are configured in server secrets.
+                    Resend SMTP relay is configured with host, port 465 SSL, and password secret.
                   </p>
                 )}
               </div>
@@ -1069,7 +1140,7 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
                       handleSaveSettings(
                         undefined,
                         { emailProvider: 'smtp' },
-                        'SMTP selected as email provider.'
+                        'Resend SMTP selected as email provider.'
                       )
                     }
                     className={`rounded-lg border px-3 py-1.5 text-xs font-medium cursor-pointer ${
@@ -1085,11 +1156,11 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
             </div>
           </div>
 
-          {/* Email Delivery Configuration Panel */}
+          {/* Email Delivery & Administrator Email Configuration Panel */}
           {settings && (
             <form
               onSubmit={(e) =>
-                handleSaveSettings(e, undefined, 'Email delivery configuration updated.')
+                handleSaveSettings(e, undefined, 'Integrations & administrator settings updated.')
               }
               className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-5"
             >
@@ -1098,11 +1169,11 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
                   <Mail className="h-5 w-5 text-blue-700 dark:text-blue-400" />
                   <div>
                     <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-50">
-                      Email Delivery Settings
+                      Email Delivery &amp; Administrator Settings
                     </h2>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Choose how alerts are handled while testing or once email credentials are
-                      connected.
+                      Pre-configured for Resend SMTP (<code className="font-mono">smtp.resend.com</code> · Port 465 ·{' '}
+                      <code className="font-mono">onboarding@resend.dev</code>) and secure administrator access.
                     </p>
                   </div>
                 </div>
@@ -1128,7 +1199,7 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
                   >
                     <option value="none">Log Only (Not Connected — Safe Testing)</option>
                     <option value="resend">Resend API (Requires RESEND_API_KEY secret)</option>
-                    <option value="smtp">Custom SMTP (Requires SMTP_PASS secret)</option>
+                    <option value="smtp">Resend SMTP (Requires SMTP_PASS secret)</option>
                   </select>
                 </div>
 
@@ -1148,11 +1219,11 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Sender From Address
+                    Sender From Address (SMTP_FROM)
                   </label>
                   <input
                     type="email"
-                    value={settings.emailFromAddress}
+                    value={settings.emailFromAddress || 'onboarding@resend.dev'}
                     onChange={(e) =>
                       setSettings({ ...settings, emailFromAddress: e.target.value })
                     }
@@ -1162,13 +1233,13 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    SMTP Host
+                    SMTP Host (SMTP_HOST)
                   </label>
                   <input
                     type="text"
-                    value={settings.smtpHost || ''}
+                    value={settings.smtpHost ?? 'smtp.resend.com'}
                     onChange={(e) => setSettings({ ...settings, smtpHost: e.target.value })}
-                    placeholder="smtp.example.com"
+                    placeholder="smtp.resend.com"
                     className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                   />
                 </div>
@@ -1176,11 +1247,11 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Port
+                      Port (SMTP_PORT)
                     </label>
                     <input
                       type="number"
-                      value={settings.smtpPort || 587}
+                      value={settings.smtpPort ?? 465}
                       onChange={(e) =>
                         setSettings({ ...settings, smtpPort: Number(e.target.value) })
                       }
@@ -1193,12 +1264,28 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
                     </label>
                     <input
                       type="text"
-                      value={settings.smtpUser || ''}
+                      value={settings.smtpUser ?? 'resend'}
                       onChange={(e) => setSettings({ ...settings, smtpUser: e.target.value })}
-                      placeholder="user"
+                      placeholder="resend"
                       className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Administrator Emails (ADMIN_EMAILS)
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.adminEmails || ''}
+                    onChange={(e) => setSettings({ ...settings, adminEmails: e.target.value })}
+                    placeholder="you@gmail.com, co-admin@example.com"
+                    className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                    Comma-separated emails granted Administrator Dashboard access upon sign-in.
+                  </p>
                 </div>
               </div>
 
@@ -1219,7 +1306,7 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
                   type="submit"
                   className="rounded-lg bg-blue-700 dark:bg-blue-600 px-5 py-2 text-xs font-semibold text-white hover:bg-blue-800 dark:hover:bg-blue-500 cursor-pointer"
                 >
-                  Save Email Settings
+                  Save Settings
                 </button>
               </div>
             </form>
@@ -1273,10 +1360,15 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
                         <code className="font-mono">{src.apiKeyEnvVar}</code>
                       </p>
                     )}
-                    {src.lastError && (
+                    {src.lastError && src.status !== 'not_connected' && src.status !== 'needs_config' && (
                       <p className="mt-1.5 flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400">
                         <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                         {src.lastError}
+                      </p>
+                    )}
+                    {(src.status === 'not_connected' || src.status === 'needs_config') && (
+                      <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+                        Integration is not connected yet.
                       </p>
                     )}
                   </div>
@@ -1604,15 +1696,21 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="font-mono text-slate-700 dark:text-slate-300">SMTP_HOST / SMTP_PASS</span>
+                <span className="font-mono text-slate-700 dark:text-slate-300">SMTP_PASS (Resend Key)</span>
                 <span
                   className={
-                    credentialsStatus.hasSmtpCredentials
+                    credentialsStatus.hasSmtpPass
                       ? 'font-semibold text-emerald-700 dark:text-emerald-400'
                       : 'text-slate-500 dark:text-slate-400'
                   }
                 >
-                  {credentialsStatus.hasSmtpCredentials ? 'Connected' : 'Not connected'}
+                  {credentialsStatus.hasSmtpPass ? 'Connected' : 'Not connected'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-2">
+                <span className="font-mono text-slate-700 dark:text-slate-300">SMTP Host / Port</span>
+                <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                  smtp.resend.com:465
                 </span>
               </div>
             </div>
@@ -1870,7 +1968,7 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
                 </div>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Skills (comma-separated)
@@ -1893,6 +1991,17 @@ export function AdminDashboard({ categories, onDataChanged }: AdminDashboardProp
                     onChange={(e) => setJobForm({ ...jobForm, salaryText: e.target.value })}
                     placeholder="e.g. £50,000 - £65,000"
                     className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Application Deadline (optional)
+                  </label>
+                  <input
+                    type="date"
+                    value={jobForm.deadlineAt}
+                    onChange={(e) => setJobForm({ ...jobForm, deadlineAt: e.target.value })}
+                    className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
                   />
                 </div>
               </div>

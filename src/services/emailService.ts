@@ -12,6 +12,19 @@ export interface EmailPayload {
   matchedJobsCount?: number;
 }
 
+function isRealSecret(value?: string | null): value is string {
+  if (!value) return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  const upper = trimmed.toUpperCase();
+  return (
+    !upper.startsWith('MY_') &&
+    !upper.startsWith('YOUR_') &&
+    !upper.includes('PLACEHOLDER') &&
+    !upper.includes('CHANGEME')
+  );
+}
+
 export async function dispatchEmail(payload: EmailPayload): Promise<{
   status: 'sent' | 'queued_unconfigured' | 'failed';
   errorMessage?: string;
@@ -40,15 +53,29 @@ export async function dispatchEmail(payload: EmailPayload): Promise<{
     }
 
     const fromAddress =
-      settings?.emailFromAddress || process.env.SMTP_FROM || 'alerts@meridianjobs.app';
+      settings?.emailFromAddress || process.env.SMTP_FROM || 'onboarding@resend.dev';
 
-    const resendApiKey = process.env.RESEND_API_KEY;
+    const resendApiKey = isRealSecret(process.env.RESEND_API_KEY)
+      ? process.env.RESEND_API_KEY.trim()
+      : null;
+
+    const smtpHost = settings?.smtpHost || process.env.SMTP_HOST || 'smtp.resend.com';
+    const smtpPort = settings?.smtpPort || Number(process.env.SMTP_PORT || 465);
+    const smtpUser = settings?.smtpUser || process.env.SMTP_USER || 'resend';
+
+    // Resend SMTP uses your Resend API key as SMTP_PASS when configured
+    const rawSmtpPass = isRealSecret(process.env.SMTP_PASS)
+      ? process.env.SMTP_PASS.trim()
+      : smtpHost === 'smtp.resend.com' && resendApiKey
+        ? resendApiKey
+        : null;
+
     const provider =
       settings?.emailProvider && settings.emailProvider !== 'none'
         ? settings.emailProvider
         : resendApiKey
           ? 'resend'
-          : process.env.SMTP_HOST
+          : rawSmtpPass
             ? 'smtp'
             : 'none';
 
@@ -91,19 +118,14 @@ export async function dispatchEmail(payload: EmailPayload): Promise<{
       return { status: 'sent' };
     }
 
-    const smtpHost = settings?.smtpHost || process.env.SMTP_HOST;
-    const smtpPort = settings?.smtpPort || Number(process.env.SMTP_PORT || 587);
-    const smtpUser = settings?.smtpUser || process.env.SMTP_USER;
-    const smtpPass = process.env.SMTP_PASS;
-
-    if (provider === 'smtp' && smtpHost && smtpUser && smtpPass) {
+    if (provider === 'smtp' && smtpHost && smtpUser && rawSmtpPass) {
       const transporter = nodemailer.createTransport({
         host: smtpHost,
         port: smtpPort,
         secure: smtpPort === 465,
         auth: {
           user: smtpUser,
-          pass: smtpPass,
+          pass: rawSmtpPass,
         },
       });
 
@@ -131,7 +153,7 @@ export async function dispatchEmail(payload: EmailPayload): Promise<{
       type: payload.type,
       status: 'queued_unconfigured',
       errorMessage:
-        'Email integration is not connected. Add RESEND_API_KEY or SMTP credentials in Integrations when ready.',
+        'Email integration is not connected. Add RESEND_API_KEY or SMTP_PASS (your Resend API key) when ready.',
       matchedJobsCount: payload.matchedJobsCount ?? 0,
     });
 

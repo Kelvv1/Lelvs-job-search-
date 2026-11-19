@@ -69,7 +69,21 @@ export function JobDetailView({
       setCopiedEmail(true);
       setTimeout(() => setCopiedEmail(false), 2200);
     } catch {
-      // Fallback ignored
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = email;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        setCopiedEmail(true);
+        setTimeout(() => setCopiedEmail(false), 2200);
+      } catch {
+        // Fallback ignored
+      }
     }
   };
 
@@ -150,6 +164,11 @@ export function JobDetailView({
                 </div>
 
                 <div>
+                  {job.isSampleData && (
+                    <p className="mb-1 text-xs font-semibold text-amber-700 dark:text-amber-400">
+                      Sample Listing (Demo Data)
+                    </p>
+                  )}
                   <h1 className="font-display text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-50 sm:text-3xl">
                     {job.title}
                   </h1>
@@ -280,23 +299,32 @@ export function JobDetailView({
                     <p className="mt-1.5 break-all font-mono text-sm font-medium text-slate-900 dark:text-slate-100">
                       {job.applicationEmail}
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => handleCopyEmail(job.applicationEmail!)}
-                      className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2 text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                    >
-                      {copiedEmail ? (
-                        <>
-                          <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                          Email Address Copied
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="h-3.5 w-3.5" />
-                          Copy Email Address
-                        </>
-                      )}
-                    </button>
+                    <div className="mt-3 flex flex-col gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleCopyEmail(job.applicationEmail!)}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2 text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                      >
+                        {copiedEmail ? (
+                          <>
+                            <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                            Email Address Copied
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-3.5 w-3.5" />
+                            Copy Email Address
+                          </>
+                        )}
+                      </button>
+                      <a
+                        href={`mailto:${job.applicationEmail}?subject=${encodeURIComponent(`Application: ${job.title}`)}`}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/60 px-3.5 py-2 text-xs font-semibold text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-colors"
+                      >
+                        <Mail className="h-3.5 w-3.5" />
+                        Compose Application Email
+                      </a>
+                    </div>
                   </div>
                 )}
 

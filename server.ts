@@ -141,12 +141,12 @@ app.get('/api/jobs', optionalAuth, async (req: AuthRequest, res) => {
       conditions.push(eq(jobs.experienceLevel, experienceLevel));
     }
 
-    if (dataOrigin === 'live') {
+    if (!demoModeEnabled) {
+      conditions.push(eq(jobs.isSampleData, false));
+    } else if (dataOrigin === 'live') {
       conditions.push(eq(jobs.isSampleData, false));
     } else if (dataOrigin === 'sample') {
       conditions.push(eq(jobs.isSampleData, true));
-    } else if (!demoModeEnabled) {
-      conditions.push(eq(jobs.isSampleData, false));
     }
 
     if (datePosted) {
@@ -239,6 +239,7 @@ app.get('/api/jobs', optionalAuth, async (req: AuthRequest, res) => {
       total,
       page,
       totalPages,
+      demoModeEnabled,
       expandedTerms: q ? expandedTerms.slice(0, 8) : [],
     });
   } catch (error) {
@@ -270,16 +271,26 @@ app.get('/api/jobs/:id', optionalAuth, async (req: AuthRequest, res) => {
       isSaved = saved.length > 0;
     }
 
+    const settingsRows = await db
+      .select({ demoModeEnabled: platformSettings.demoModeEnabled })
+      .from(platformSettings)
+      .where(eq(platformSettings.key, 'default'))
+      .limit(1);
+    const demoModeEnabled = settingsRows[0]?.demoModeEnabled ?? true;
+
+    const relatedConditions = [
+      eq(jobs.categoryName, job.categoryName),
+      ne(jobs.id, job.id),
+      ne(jobs.status, 'expired'),
+    ];
+    if (!demoModeEnabled || !job.isSampleData) {
+      relatedConditions.push(eq(jobs.isSampleData, false));
+    }
+
     const related = await db
       .select()
       .from(jobs)
-      .where(
-        and(
-          eq(jobs.categoryName, job.categoryName),
-          ne(jobs.id, job.id),
-          ne(jobs.status, 'expired')
-        )
-      )
+      .where(and(...relatedConditions))
       .orderBy(desc(jobs.publishedAt))
       .limit(3);
 
@@ -891,6 +902,17 @@ app.patch('/api/admin/jobs/:id', requireAuth, requireAdmin, async (req, res) => 
     ) {
       updates.applicationInstructions = req.body.applicationInstructions;
     }
+    if (typeof req.body.companyLogo === 'string' || req.body.companyLogo === null) {
+      updates.companyLogo = req.body.companyLogo ? req.body.companyLogo.trim() : null;
+    }
+    if (req.body.deadlineAt === null || req.body.deadlineAt === '') {
+      updates.deadlineAt = null;
+    } else if (typeof req.body.deadlineAt === 'string') {
+      const parsedDeadline = new Date(req.body.deadlineAt);
+      if (!Number.isNaN(parsedDeadline.getTime())) {
+        updates.deadlineAt = parsedDeadline;
+      }
+    }
     if (typeof req.body.isSampleData === 'boolean') {
       updates.isSampleData = req.body.isSampleData;
     }
@@ -1056,6 +1078,19 @@ app.post('/api/admin/sync', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+function isConfiguredSecret(value?: string | null): boolean {
+  if (!value) return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  const upper = trimmed.toUpperCase();
+  return (
+    !upper.startsWith('MY_') &&
+    !upper.startsWith('YOUR_') &&
+    !upper.includes('PLACEHOLDER') &&
+    !upper.includes('CHANGEME')
+  );
+}
+
 app.get('/api/admin/settings', requireAuth, requireAdmin, async (_req, res) => {
   try {
     const rows = await db
@@ -1064,12 +1099,23 @@ app.get('/api/admin/settings', requireAuth, requireAdmin, async (_req, res) => {
       .where(eq(platformSettings.key, 'default'))
       .limit(1);
 
+    const currentSettings = rows[0] ?? null;
+    const effectiveSmtpHost = currentSettings?.smtpHost || process.env.SMTP_HOST || 'smtp.resend.com';
+    const effectiveSmtpUser = currentSettings?.smtpUser || process.env.SMTP_USER || 'resend';
+    const hasResendKey = isConfiguredSecret(process.env.RESEND_API_KEY);
+    const hasSmtpPass =
+      isConfiguredSecret(process.env.SMTP_PASS) ||
+      (effectiveSmtpHost === 'smtp.resend.com' && hasResendKey);
+
     res.json({
-      settings: rows[0] ?? null,
+      settings: currentSettings,
       credentialsStatus: {
-        hasResendKey: Boolean(process.env.RESEND_API_KEY),
-        hasSmtpCredentials: Boolean(process.env.SMTP_HOST && process.env.SMTP_PASS),
-        hasAdzunaCredentials: Boolean(process.env.ADZUNA_APP_ID && process.env.ADZUNA_APP_KEY),
+        hasResendKey,
+        hasSmtpCredentials: Boolean(effectiveSmtpHost && effectiveSmtpUser && hasSmtpPass),
+        hasSmtpPass,
+        hasAdzunaCredentials:
+          isConfiguredSecret(process.env.ADZUNA_APP_ID) &&
+          isConfiguredSecret(process.env.ADZUNA_APP_KEY),
       },
     });
   } catch (error) {
@@ -1124,6 +1170,25 @@ app.patch('/api/admin/settings', requireAuth, requireAdmin, async (req, res) => 
     }
     if (typeof req.body.reviewRecipientEmail === 'string' && req.body.reviewRecipientEmail.includes('@')) {
       updates.reviewRecipientEmail = req.body.reviewRecipientEmail.trim();
+    }
+    if (typeof req.body.adminEmails === 'string') {
+      const parsedEmails = req.body.adminEmails
+        .split(',')
+        .map((item: string) => item.trim().toLowerCase())
+        .filter((item: string) => item.length > 0);
+      const invalid = parsedEmails.find((e: string) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+      if (invalid) {
+        return res.status(400).json({ error: `Invalid administrator email format: ${invalid}` });
+      }
+      const uniqueEmails = Array.from(new Set(parsedEmails));
+      updates.adminEmails = uniqueEmails.join(', ');
+
+      if (uniqueEmails.length > 0) {
+        await db
+          .update(users)
+          .set({ role: 'admin', updatedAt: new Date() })
+          .where(inArray(sql`lower(${users.email})`, uniqueEmails));
+      }
     }
 
     const updated = await db

@@ -41,9 +41,28 @@ interface NormalizedExternalJob {
 
 const USER_AGENT = 'KelvsJobSearch/1.0 (+https://kelvsjobsearch.app)';
 
+function toFinitePositiveNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const num =
+    typeof value === 'number'
+      ? value
+      : Number(String(value).replace(/,/g, '').trim());
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return num;
+}
+
+function toSafeInteger(value: unknown): number | null {
+  const num = toFinitePositiveNumber(value);
+  if (num === null) return null;
+  const rounded = Math.round(num);
+  if (rounded <= 0 || rounded > 2_147_483_647) return null;
+  return rounded;
+}
+
 function stripHtmlToReadableText(html: string): string {
   if (!html) return '';
   return html
+    .replace(/\u0000/g, '')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<\/?(p|div|h1|h2|h3|h4|h5|h6|br|tr)[^>]*>/gi, '\n')
@@ -368,14 +387,17 @@ async function fetchJobicyJobs(
     const cleanText = stripHtmlToReadableText(String(item.jobDescription || item.jobExcerpt || ''));
     const location = String(item.jobGeo || 'Worldwide (Remote)');
     const url = String(item.url || '');
-    const minSal = item.annualSalaryMin ? Number(item.annualSalaryMin) : null;
-    const maxSal = item.annualSalaryMax ? Number(item.annualSalaryMax) : null;
+    const rawMin = toFinitePositiveNumber(item.annualSalaryMin);
+    const rawMax = toFinitePositiveNumber(item.annualSalaryMax);
+    const minSal = toSafeInteger(rawMin);
+    const maxSal = toSafeInteger(rawMax);
     const currency = item.salaryCurrency ? String(item.salaryCurrency) : 'USD';
+    const suffix = rawMin && rawMin >= 1000 ? ' / yr' : '';
     const salaryText =
-      minSal && maxSal
-        ? `${currency} ${minSal.toLocaleString()} - ${maxSal.toLocaleString()} / yr`
-        : minSal
-          ? `From ${currency} ${minSal.toLocaleString()} / yr`
+      rawMin && rawMax
+        ? `${currency} ${rawMin.toLocaleString()} - ${rawMax.toLocaleString()}${suffix}`
+        : rawMin
+          ? `From ${currency} ${rawMin.toLocaleString()}${suffix}`
           : null;
 
     return {
@@ -432,13 +454,16 @@ async function fetchRemoteOkJobs(
     const location = String(item.location || 'Worldwide (Remote)');
     const url = String(item.apply_url || item.url || '');
     const tags = Array.isArray(item.tags) ? item.tags.map(String) : [];
-    const minSal = item.salary_min && Number(item.salary_min) > 0 ? Number(item.salary_min) : null;
-    const maxSal = item.salary_max && Number(item.salary_max) > 0 ? Number(item.salary_max) : null;
+    const rawMin = toFinitePositiveNumber(item.salary_min);
+    const rawMax = toFinitePositiveNumber(item.salary_max);
+    const minSal = toSafeInteger(rawMin);
+    const maxSal = toSafeInteger(rawMax);
+    const suffix = rawMin && rawMin >= 1000 ? ' / yr' : '';
     const salaryText =
-      minSal && maxSal
-        ? `$${minSal.toLocaleString()} - $${maxSal.toLocaleString()} / yr`
-        : minSal
-          ? `From $${minSal.toLocaleString()} / yr`
+      rawMin && rawMax
+        ? `$${rawMin.toLocaleString()} - $${rawMax.toLocaleString()}${suffix}`
+        : rawMin
+          ? `From $${rawMin.toLocaleString()}${suffix}`
           : null;
 
     return {
@@ -490,14 +515,17 @@ async function fetchHimalayasJobs(
     const location = restrictions.length > 0 ? restrictions.join(', ') : 'Worldwide (Remote)';
     const url = String(item.applicationLink || item.guid || '');
     const categoriesArr = Array.isArray(item.categories) ? item.categories.map(String) : [];
-    const minSal = item.minSalary && Number(item.minSalary) > 0 ? Number(item.minSalary) : null;
-    const maxSal = item.maxSalary && Number(item.maxSalary) > 0 ? Number(item.maxSalary) : null;
+    const rawMin = toFinitePositiveNumber(item.minSalary);
+    const rawMax = toFinitePositiveNumber(item.maxSalary);
+    const minSal = toSafeInteger(rawMin);
+    const maxSal = toSafeInteger(rawMax);
     const currency = item.currency ? String(item.currency) : 'USD';
+    const suffix = rawMin && rawMin >= 1000 ? ' / yr' : '';
     const salaryText =
-      minSal && maxSal
-        ? `${currency} ${minSal.toLocaleString()} - ${maxSal.toLocaleString()} / yr`
-        : minSal
-          ? `From ${currency} ${minSal.toLocaleString()} / yr`
+      rawMin && rawMax
+        ? `${currency} ${rawMin.toLocaleString()} - ${rawMax.toLocaleString()}${suffix}`
+        : rawMin
+          ? `From ${currency} ${rawMin.toLocaleString()}${suffix}`
           : null;
     const pubEpoch = Number(item.pubDate || 0);
 
@@ -600,19 +628,39 @@ async function fetchRssFeedJobs(endpointUrl: string): Promise<NormalizedExternal
   });
 }
 
+function isRealSecret(value?: string | null): value is string {
+  if (!value) return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  const upper = trimmed.toUpperCase();
+  return (
+    !upper.startsWith('MY_') &&
+    !upper.startsWith('YOUR_') &&
+    !upper.includes('PLACEHOLDER') &&
+    !upper.includes('CHANGEME')
+  );
+}
+
 async function fetchAdzunaJobs(
   endpointUrl: string,
   config: Record<string, string>
 ): Promise<NormalizedExternalJob[]> {
-  const appId = process.env.ADZUNA_APP_ID || config.appId;
-  const appKey = process.env.ADZUNA_APP_KEY || config.appKey;
+  const rawAppId = process.env.ADZUNA_APP_ID || config.appId;
+  const rawAppKey = process.env.ADZUNA_APP_KEY || config.appKey;
+  const appId = isRealSecret(rawAppId) ? rawAppId.trim() : null;
+  const appKey = isRealSecret(rawAppKey) ? rawAppKey.trim() : null;
   if (!appId || !appKey) {
     throw new Error(
       'Missing Adzuna credentials. Set ADZUNA_APP_ID and ADZUNA_APP_KEY environment variables to enable.'
     );
   }
 
-  const url = new URL(endpointUrl);
+  const country = (config.country || 'gb').trim().toLowerCase();
+  const baseEndpoint = endpointUrl.includes('/jobs/')
+    ? endpointUrl.replace(/\/jobs\/[a-z]{2}\//i, `/jobs/${country}/`)
+    : `https://api.adzuna.com/v1/api/jobs/${country}/search/1`;
+
+  const url = new URL(baseEndpoint);
   url.searchParams.set('app_id', appId);
   url.searchParams.set('app_key', appKey);
   url.searchParams.set('results_per_page', '40');
@@ -628,8 +676,8 @@ async function fetchAdzunaJobs(
     const cleanText = stripHtmlToReadableText(String(item.description || ''));
     const location = String(item.location?.display_name || 'United Kingdom');
     const redirectUrl = String(item.redirect_url || '');
-    const minSal = item.salary_min ? Math.round(Number(item.salary_min)) : null;
-    const maxSal = item.salary_max ? Math.round(Number(item.salary_max)) : null;
+    const minSal = toSafeInteger(item.salary_min);
+    const maxSal = toSafeInteger(item.salary_max);
 
     return {
       externalId: `adzuna-${item.id}`,
@@ -735,141 +783,145 @@ async function ingestNormalizedJobs(
   for (const ext of externalJobs) {
     if (!ext.applicationUrl || !ext.title) continue;
 
-    const dedupHash = computeDedupHash(ext.title, ext.companyName);
-    const categoryMatch = await classifyCategory(
-      ext.title,
-      ext.description,
-      ext.rawCategory,
-      categoryRows
-    );
+    try {
+      const dedupHash = computeDedupHash(ext.title, ext.companyName);
+      const categoryMatch = await classifyCategory(
+        ext.title,
+        ext.description,
+        ext.rawCategory,
+        categoryRows
+      );
 
-    const existingByExternal = await db
-      .select()
-      .from(jobs)
-      .where(eq(jobs.externalId, ext.externalId))
-      .limit(1);
-
-    if (existingByExternal.length > 0) {
-      await db
-        .update(jobs)
-        .set({ lastVerifiedAt: new Date(), updatedAt: new Date() })
-        .where(eq(jobs.id, existingByExternal[0].id));
-      continue;
-    }
-
-    if (options.duplicateDetectionEnabled) {
-      const existingDuplicate = await db
+      const existingByExternal = await db
         .select()
         .from(jobs)
-        .where(and(eq(jobs.dedupHash, dedupHash), ne(jobs.status, 'expired')))
+        .where(eq(jobs.externalId, ext.externalId))
         .limit(1);
 
-      if (existingDuplicate.length > 0) {
-        const target = existingDuplicate[0];
-        const currentAlts = Array.isArray(target.alternateSources)
-          ? target.alternateSources
-          : [];
-        const alreadyRecorded =
-          target.sourceName === source.name ||
-          currentAlts.some((a) => a.sourceName === source.name);
-
-        if (!alreadyRecorded) {
-          await db
-            .update(jobs)
-            .set({
-              alternateSources: [
-                ...currentAlts,
-                {
-                  sourceName: source.name,
-                  applicationUrl: ext.applicationUrl,
-                  collectedAt: new Date().toISOString(),
-                },
-              ],
-              lastVerifiedAt: new Date(),
-              updatedAt: new Date(),
-            })
-            .where(eq(jobs.id, target.id));
-          merged += 1;
-        }
+      if (existingByExternal.length > 0) {
+        await db
+          .update(jobs)
+          .set({ lastVerifiedAt: new Date(), updatedAt: new Date() })
+          .where(eq(jobs.id, existingByExternal[0].id));
         continue;
       }
-    }
 
-    const companySlug =
-      ext.companyName
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '') || 'employer';
+      if (options.duplicateDetectionEnabled) {
+        const existingDuplicate = await db
+          .select()
+          .from(jobs)
+          .where(and(eq(jobs.dedupHash, dedupHash), ne(jobs.status, 'expired')))
+          .limit(1);
 
-    const companyRows = await db
-      .insert(companies)
-      .values({
-        name: ext.companyName,
-        slug: companySlug,
-        logoUrl: ext.companyLogo || null,
-      })
-      .onConflictDoUpdate({
-        target: companies.slug,
-        set: { name: ext.companyName },
-      })
-      .returning();
+        if (existingDuplicate.length > 0) {
+          const target = existingDuplicate[0];
+          const currentAlts = Array.isArray(target.alternateSources)
+            ? target.alternateSources
+            : [];
+          const alreadyRecorded =
+            target.sourceName === source.name ||
+            currentAlts.some((a) => a.sourceName === source.name);
 
-    const initialStatus = options.autoVerifyTrustedSources ? 'verified' : 'active';
-    const slug = createSlug(ext.title, ext.companyName, `${ext.externalId}-${Date.now()}`);
+          if (!alreadyRecorded) {
+            await db
+              .update(jobs)
+              .set({
+                alternateSources: [
+                  ...currentAlts,
+                  {
+                    sourceName: source.name,
+                    applicationUrl: ext.applicationUrl,
+                    collectedAt: new Date().toISOString(),
+                  },
+                ],
+                lastVerifiedAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .where(eq(jobs.id, target.id));
+            merged += 1;
+          }
+          continue;
+        }
+      }
 
-    const insertedJob = await db
-      .insert(jobs)
-      .values({
-        title: ext.title.slice(0, 200),
-        slug,
-        companyId: companyRows[0]?.id ?? null,
-        companyName: ext.companyName.slice(0, 140),
-        companyLogo: ext.companyLogo || null,
-        categoryId: categoryMatch?.id ?? null,
-        categoryName: categoryMatch?.name ?? 'Technology and IT',
-        description: ext.description,
-        requirements: ext.requirements,
-        skills: ext.skills,
-        employmentType: ext.employmentType,
-        experienceLevel: ext.experienceLevel,
-        location: ext.location.slice(0, 120),
-        workArrangement: ext.workArrangement,
-        salaryText: ext.salaryText || null,
-        salaryMin: ext.salaryMin || null,
-        salaryMax: ext.salaryMax || null,
-        salaryCurrency: ext.salaryCurrency || null,
-        publishedAt: Number.isNaN(ext.publishedAt.getTime()) ? new Date() : ext.publishedAt,
-        deadlineAt: ext.deadlineAt || null,
-        applicationEmail: ext.applicationEmail || null,
-        applicationUrl: ext.applicationUrl,
-        applicationInstructions: ext.applicationInstructions || null,
-        sourceId: source.id,
-        sourceName: source.name,
-        sourceUrl: ext.sourceUrl,
-        externalId: ext.externalId,
-        dedupHash,
-        alternateSources: [],
-        status: initialStatus,
-        isSampleData: false,
-        lastVerifiedAt: new Date(),
-      })
-      .returning();
+      const companySlug =
+        ext.companyName
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '') || 'employer';
 
-    added += 1;
+      const companyRows = await db
+        .insert(companies)
+        .values({
+          name: ext.companyName,
+          slug: companySlug,
+          logoUrl: ext.companyLogo || null,
+        })
+        .onConflictDoUpdate({
+          target: companies.slug,
+          set: { name: ext.companyName },
+        })
+        .returning();
 
-    if (insertedJob[0]) {
-      newlyAddedForAlerts.push({
-        id: insertedJob[0].id,
-        title: insertedJob[0].title,
-        companyName: insertedJob[0].companyName,
-        location: insertedJob[0].location,
-        workArrangement: insertedJob[0].workArrangement,
-        experienceLevel: insertedJob[0].experienceLevel,
-        categorySlug: categoryMatch?.slug || 'technology-and-it',
-        sourceName: source.name,
-        skills: insertedJob[0].skills || [],
-        description: insertedJob[0].description,
-      });
+      const initialStatus = options.autoVerifyTrustedSources ? 'verified' : 'active';
+      const slug = createSlug(ext.title, ext.companyName, `${ext.externalId}-${Date.now()}`);
+
+      const insertedJob = await db
+        .insert(jobs)
+        .values({
+          title: ext.title.slice(0, 200),
+          slug,
+          companyId: companyRows[0]?.id ?? null,
+          companyName: ext.companyName.slice(0, 140),
+          companyLogo: ext.companyLogo || null,
+          categoryId: categoryMatch?.id ?? null,
+          categoryName: categoryMatch?.name ?? 'Technology and IT',
+          description: ext.description,
+          requirements: ext.requirements,
+          skills: ext.skills,
+          employmentType: ext.employmentType,
+          experienceLevel: ext.experienceLevel,
+          location: ext.location.slice(0, 120),
+          workArrangement: ext.workArrangement,
+          salaryText: ext.salaryText || null,
+          salaryMin: toSafeInteger(ext.salaryMin),
+          salaryMax: toSafeInteger(ext.salaryMax),
+          salaryCurrency: ext.salaryCurrency || null,
+          publishedAt: Number.isNaN(ext.publishedAt.getTime()) ? new Date() : ext.publishedAt,
+          deadlineAt: ext.deadlineAt || null,
+          applicationEmail: ext.applicationEmail || null,
+          applicationUrl: ext.applicationUrl,
+          applicationInstructions: ext.applicationInstructions || null,
+          sourceId: source.id,
+          sourceName: source.name,
+          sourceUrl: ext.sourceUrl,
+          externalId: ext.externalId,
+          dedupHash,
+          alternateSources: [],
+          status: initialStatus,
+          isSampleData: false,
+          lastVerifiedAt: new Date(),
+        })
+        .returning();
+
+      added += 1;
+
+      if (insertedJob[0]) {
+        newlyAddedForAlerts.push({
+          id: insertedJob[0].id,
+          title: insertedJob[0].title,
+          companyName: insertedJob[0].companyName,
+          location: insertedJob[0].location,
+          workArrangement: insertedJob[0].workArrangement,
+          experienceLevel: insertedJob[0].experienceLevel,
+          categorySlug: categoryMatch?.slug || 'technology-and-it',
+          sourceName: source.name,
+          skills: insertedJob[0].skills || [],
+          description: insertedJob[0].description,
+        });
+      }
+    } catch (itemErr) {
+      console.warn(`Skipping malformed external job "${ext.title}" from ${source.name}:`, itemErr);
     }
   }
 
@@ -1033,8 +1085,10 @@ export async function syncJobSources(options: {
     if (source.sourceType === 'manual') continue;
 
     if (source.sourceType === 'adzuna_api') {
-      const appId = process.env.ADZUNA_APP_ID || source.apiConfigJson?.appId;
-      const appKey = process.env.ADZUNA_APP_KEY || source.apiConfigJson?.appKey;
+      const rawAppId = process.env.ADZUNA_APP_ID || source.apiConfigJson?.appId;
+      const rawAppKey = process.env.ADZUNA_APP_KEY || source.apiConfigJson?.appKey;
+      const appId = isRealSecret(rawAppId) ? rawAppId.trim() : null;
+      const appKey = isRealSecret(rawAppKey) ? rawAppKey.trim() : null;
       if (!appId || !appKey) {
         await db
           .update(jobSources)

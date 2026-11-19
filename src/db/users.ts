@@ -1,8 +1,8 @@
 import { count, eq } from 'drizzle-orm';
 import { db } from './index.ts';
-import { users } from './schema.ts';
+import { platformSettings, users } from './schema.ts';
 
-function isConfiguredAdminEmail(email: string): boolean {
+async function isConfiguredAdminEmail(email: string): Promise<boolean> {
   const normalized = email.trim().toLowerCase();
   const envAdmins = (process.env.ADMIN_EMAILS || '')
     .split(',')
@@ -11,6 +11,25 @@ function isConfiguredAdminEmail(email: string): boolean {
 
   if (envAdmins.includes(normalized)) {
     return true;
+  }
+
+  try {
+    const settingsRows = await db
+      .select({ adminEmails: platformSettings.adminEmails })
+      .from(platformSettings)
+      .where(eq(platformSettings.key, 'default'))
+      .limit(1);
+
+    const dbAdmins = (settingsRows[0]?.adminEmails || '')
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+
+    if (dbAdmins.includes(normalized)) {
+      return true;
+    }
+  } catch {
+    // Ignore if platformSettings is not yet seeded
   }
 
   if (normalized === 'ebaluegbefodestiny@gmail.com') {
@@ -23,9 +42,11 @@ function isConfiguredAdminEmail(email: string): boolean {
 export async function getOrCreateUser(uid: string, email: string, displayName?: string | null) {
   try {
     const existing = await db.select().from(users).where(eq(users.uid, uid)).limit(1);
+    const configuredAdmin = await isConfiguredAdminEmail(email);
+
     if (existing.length > 0) {
       const current = existing[0];
-      const shouldBeAdmin = isConfiguredAdminEmail(email) && current.role !== 'admin';
+      const shouldBeAdmin = configuredAdmin && current.role !== 'admin';
       if (shouldBeAdmin || (displayName && displayName !== current.displayName)) {
         const updated = await db
           .update(users)
@@ -44,7 +65,7 @@ export async function getOrCreateUser(uid: string, email: string, displayName?: 
 
     const totalUsersResult = await db.select({ total: count() }).from(users);
     const isFirstUser = Number(totalUsersResult[0]?.total ?? 0) === 0;
-    const assignedRole = isFirstUser || isConfiguredAdminEmail(email) ? 'admin' : 'user';
+    const assignedRole = isFirstUser || configuredAdmin ? 'admin' : 'user';
 
     const inserted = await db
       .insert(users)

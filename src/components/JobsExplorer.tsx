@@ -42,6 +42,7 @@ export function JobsExplorer({
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [expandedTerms, setExpandedTerms] = useState<string[]>([]);
+  const [demoModeEnabled, setDemoModeEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
@@ -86,6 +87,7 @@ export function JobsExplorer({
           jobs: JobListing[];
           total: number;
           totalPages: number;
+          demoModeEnabled?: boolean;
           expandedTerms: string[];
         };
 
@@ -93,6 +95,9 @@ export function JobsExplorer({
           setJobs(data.jobs);
           setTotal(data.total);
           setTotalPages(data.totalPages);
+          if (typeof data.demoModeEnabled === 'boolean') {
+            setDemoModeEnabled(data.demoModeEnabled);
+          }
           setExpandedTerms(data.expandedTerms || []);
         }
       } catch (err: unknown) {
@@ -257,8 +262,8 @@ export function JobsExplorer({
           className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:border-blue-600 dark:focus:border-blue-400 focus:outline-none"
         >
           <option value="all">All Active Listings</option>
-          <option value="live">Live External Sources Only</option>
-          <option value="sample">Sample Reference Listings</option>
+          <option value="live">Real &amp; Live Listings Only</option>
+          {demoModeEnabled && <option value="sample">Sample Demo Listings</option>}
         </select>
       </div>
     </div>

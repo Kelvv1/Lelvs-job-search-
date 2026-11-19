@@ -1,4 +1,4 @@
-import { count } from 'drizzle-orm';
+import { count, eq } from 'drizzle-orm';
 import { db } from './index.ts';
 import {
   categories,
@@ -185,9 +185,9 @@ async function runBootstrap(): Promise<void> {
       .onConflictDoNothing();
   }
 
-  // 2. Ensure default platform settings exist
-  const settingsCount = await db.select({ total: count() }).from(platformSettings);
-  if (Number(settingsCount[0]?.total ?? 0) === 0) {
+  // 2. Ensure default platform settings exist with known Resend SMTP configuration
+  const existingSettings = await db.select().from(platformSettings).limit(1);
+  if (existingSettings.length === 0) {
     await db
       .insert(platformSettings)
       .values({
@@ -199,19 +199,42 @@ async function runBootstrap(): Promise<void> {
         autoVerifyTrustedSources: false,
         emailProvider: process.env.RESEND_API_KEY
           ? 'resend'
-          : process.env.SMTP_HOST
+          : process.env.SMTP_PASS
             ? 'smtp'
             : 'none',
-        emailFromAddress: process.env.SMTP_FROM || 'alerts@kelvsjobsearch.app',
+        emailFromAddress: process.env.SMTP_FROM || 'onboarding@resend.dev',
         reviewRecipientEmail: 'ebaluegbefodestiny@gmail.com',
-        smtpHost: process.env.SMTP_HOST || null,
-        smtpPort: Number(process.env.SMTP_PORT || 587),
-        smtpUser: process.env.SMTP_USER || null,
+        adminEmails: process.env.ADMIN_EMAILS || 'ebaluegbefodestiny@gmail.com',
+        smtpHost: process.env.SMTP_HOST || 'smtp.resend.com',
+        smtpPort: Number(process.env.SMTP_PORT || 465),
+        smtpUser: process.env.SMTP_USER || 'resend',
         emailNotificationsEnabled: true,
         demoModeEnabled: true,
         autoSyncEnabled: true,
       })
       .onConflictDoNothing();
+  } else {
+    const current = existingSettings[0];
+    const needsSmtpDefaults =
+      !current.smtpHost ||
+      current.emailFromAddress === 'alerts@kelvsjobsearch.app' ||
+      current.emailFromAddress === 'alerts@meridianjobs.app';
+    if (needsSmtpDefaults) {
+      await db
+        .update(platformSettings)
+        .set({
+          smtpHost: current.smtpHost || process.env.SMTP_HOST || 'smtp.resend.com',
+          smtpPort: !current.smtpPort || current.smtpPort === 587 ? Number(process.env.SMTP_PORT || 465) : current.smtpPort,
+          smtpUser: current.smtpUser || process.env.SMTP_USER || 'resend',
+          emailFromAddress:
+            current.emailFromAddress === 'alerts@kelvsjobsearch.app' ||
+            current.emailFromAddress === 'alerts@meridianjobs.app'
+              ? process.env.SMTP_FROM || 'onboarding@resend.dev'
+              : current.emailFromAddress,
+          updatedAt: new Date(),
+        })
+        .where(eq(platformSettings.id, current.id));
+    }
   }
 
   // 3. Ensure external job sources exist (and add RemoteOK + Himalayas if missing)

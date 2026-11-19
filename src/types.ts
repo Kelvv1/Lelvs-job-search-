@@ -131,6 +131,7 @@ export interface PlatformSettingsItem {
   demoModeEnabled: boolean;
   autoSyncEnabled: boolean;
   reviewRecipientEmail: string;
+  adminEmails: string;
   lastScheduledRunAt: string | null;
 }
 

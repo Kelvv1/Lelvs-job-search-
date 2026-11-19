@@ -32,7 +32,7 @@ export function JobCard({ job, onSelect, onToggleSave }: JobCardProps) {
   const excerpt = job.description.replace(/\n+/g, ' ').trim().slice(0, 145);
 
   return (
-    <article className="group flex flex-col justify-between rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 transition-all duration-150 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-sm">
+    <article className="group flex flex-col justify-between rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 transition-all duration-150 ease-out hover:-translate-y-0.5 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md dark:hover:shadow-slate-950/50">
       <div>
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3.5 min-w-0">
@@ -61,11 +61,11 @@ export function JobCard({ job, onSelect, onToggleSave }: JobCardProps) {
               <button
                 type="button"
                 onClick={() => onSelect(job)}
-                className="text-left font-display text-base font-semibold text-slate-900 dark:text-slate-50 group-hover:text-blue-700 dark:group-hover:text-blue-400 transition-colors line-clamp-2 cursor-pointer"
+                className="text-left font-display text-[16px] leading-snug font-semibold text-slate-900 dark:text-slate-50 group-hover:text-blue-700 dark:group-hover:text-blue-400 transition-colors line-clamp-2 cursor-pointer"
               >
                 {job.title}
               </button>
-              <p className="mt-0.5 text-sm font-medium text-slate-700 dark:text-slate-300 truncate">
+              <p className="mt-1 text-sm font-medium text-slate-600 dark:text-slate-300 truncate">
                 {job.companyName}
               </p>
             </div>
@@ -90,7 +90,7 @@ export function JobCard({ job, onSelect, onToggleSave }: JobCardProps) {
         </div>
 
         {/* Clean Unboxed Metadata Line (Zero-Pill Discipline) */}
-        <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600 dark:text-slate-400">
+        <div className="mt-3.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600 dark:text-slate-400">
           <span>{job.location}</span>
           <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span>
           <span className="font-medium text-slate-800 dark:text-slate-200">{job.workArrangement}</span>
@@ -111,7 +111,7 @@ export function JobCard({ job, onSelect, onToggleSave }: JobCardProps) {
         </p>
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 dark:border-slate-800 pt-3.5 text-xs text-slate-500 dark:text-slate-400">
+      <div className="mt-5 flex items-center justify-between gap-3 border-t border-slate-100 dark:border-slate-800 pt-3.5 text-xs text-slate-500 dark:text-slate-400">
         <div className="flex items-center gap-1.5 min-w-0">
           {!job.isSampleData && job.status === 'verified' && (
             <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
@@ -124,9 +124,9 @@ export function JobCard({ job, onSelect, onToggleSave }: JobCardProps) {
         <button
           type="button"
           onClick={() => onSelect(job)}
-          className="font-medium text-blue-700 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 whitespace-nowrap shrink-0 cursor-pointer"
+          className="font-semibold text-blue-700 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 whitespace-nowrap shrink-0 cursor-pointer"
         >
-          View details
+          View details →
         </button>
       </div>
     </article>
